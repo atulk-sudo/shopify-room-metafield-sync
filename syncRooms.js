@@ -8,6 +8,11 @@ const ALLOWED_TAGS = [
   "Kids", "Kitchen", "Living", "Nursery", "Office"
 ];
 
+// Build lowercase → Proper Case map
+const TAG_MAP = Object.fromEntries(
+  ALLOWED_TAGS.map(t => [t.toLowerCase(), t])
+);
+
 const endpoint = `https://${SHOP}/admin/api/2024-10/graphql.json`;
 
 async function shopify(query, variables = {}) {
@@ -50,7 +55,11 @@ async function run() {
     const edges = res.data.products.edges;
 
     for (const { node } of edges) {
-      const matched = node.tags.filter(t => ALLOWED_TAGS.includes(t));
+      // Normalize tags (trim + lowercase)
+      const matched = node.tags
+        .map(t => t.trim().toLowerCase())
+        .filter(t => TAG_MAP[t])
+        .map(t => TAG_MAP[t]);
 
       let existing = [];
       if (node.metafield?.value) {
@@ -58,7 +67,9 @@ async function run() {
       }
 
       const merged = [...new Set([...existing, ...matched])];
-      if (merged.length === 0) continue;
+
+      // Skip if nothing to update
+      if (merged.length === existing.length) continue;
 
       const mutation = `
         mutation ($input: MetafieldsSetInput!) {
