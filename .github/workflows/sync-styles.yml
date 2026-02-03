@@ -2,11 +2,9 @@ name: Sync Style Metafield from Tags
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 2 * * *" # runs daily at 2 AM UTC
 
 jobs:
-  sync:
+  sync-style:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +20,7 @@ jobs:
         run: npm install node-fetch
 
       - name: Run style sync
+        run: node syncStyle.js
         env:
-          SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
-          SHOPIFY_ADMIN_API_TOKEN: ${{ secrets.SHOPIFY_ADMIN_API_TOKEN }}
-        run: node syncStyles.js
+          SHOP: ${{ secrets.SHOP }}
+          TOKEN: ${{ secrets.TOKEN }}
