@@ -27,30 +27,36 @@ async function getAllProducts() {
   while (url) {
     const res = await fetch(url, { headers });
     const data = await res.json();
-
     products.push(...data.products);
 
-    const linkHeader = res.headers.get("link");
-    if (linkHeader && linkHeader.includes('rel="next"')) {
-      url = linkHeader
-        .split(",")
-        .find(l => l.includes('rel="next"'))
-        .match(/<([^>]+)>/)[1];
+    const link = res.headers.get("link");
+    if (link && link.includes('rel="next"')) {
+      url = link.match(/<([^>]+)>/)[1];
     } else {
       url = null;
     }
   }
-
   return products;
 }
 
-async function updateMetafield(productId, values) {
+async function getExistingStyles(productId) {
+  const res = await fetch(
+    `https://${SHOP}/admin/api/${API_VERSION}/products/${productId}/metafields.json?namespace=custom&key=style_new`,
+    { headers }
+  );
+  const data = await res.json();
+
+  if (!data.metafields.length) return [];
+  return JSON.parse(data.metafields[0].value);
+}
+
+async function updateStyles(productId, values) {
   const body = {
     metafield: {
       namespace: "custom",
       key: "style_new",
-      type: "single_line_text_field",
-      value: values.join(","),
+      type: "list.single_line_text_field",
+      value: JSON.stringify(values),
     },
   };
 
@@ -64,9 +70,9 @@ async function updateMetafield(productId, values) {
   );
 
   if (!res.ok) {
-    console.error(`❌ Failed updating product ${productId}`);
+    console.error(`❌ Failed product ${productId}`);
   } else {
-    console.log(`✅ Updated product ${productId}: ${values.join(", ")}`);
+    console.log(`✅ Product ${productId}: ${values.join(", ")}`);
   }
 }
 
@@ -78,31 +84,16 @@ async function run() {
       .split(",")
       .map(t => t.trim().toLowerCase());
 
-    const matchedStyles = Object.entries(TAG_TO_STYLE)
+    const matched = Object.entries(TAG_TO_STYLE)
       .filter(([tag]) => tags.includes(tag))
       .map(([, value]) => value);
 
-    if (matchedStyles.length === 0) continue;
+    if (!matched.length) continue;
 
-    // Get existing metafield values
-    const mfRes = await fetch(
-      `https://${SHOP}/admin/api/${API_VERSION}/products/${product.id}/metafields.json?namespace=custom&key=style_new`,
-      { headers }
-    );
-    const mfData = await mfRes.json();
+    const existing = await getExistingStyles(product.id);
+    const finalValues = [...new Set([...existing, ...matched])];
 
-    let existingValues = [];
-    if (mfData.metafields.length > 0) {
-      existingValues = mfData.metafields[0].value
-        .split(",")
-        .map(v => v.trim());
-    }
-
-    const finalValues = [
-      ...new Set([...existingValues, ...matchedStyles]),
-    ];
-
-    await updateMetafield(product.id, finalValues);
+    await updateStyles(product.id, finalValues);
   }
 }
 
