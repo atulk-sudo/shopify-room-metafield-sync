@@ -20,7 +20,7 @@ jobs:
         run: npm install node-fetch
 
       - name: Run style sync
-        run: node syncStyle.js
+        run: node syncStyles.js
         env:
           SHOP: ${{ secrets.SHOP }}
           TOKEN: ${{ secrets.TOKEN }}
