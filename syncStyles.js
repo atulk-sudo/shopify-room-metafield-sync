@@ -1,100 +1,114 @@
 import fetch from "node-fetch";
 
-const SHOP = process.env.SHOPIFY_STORE_URL;
-const TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
-const API_VERSION = "2024-01";
+const SHOP = process.env.SHOP;
+const TOKEN = process.env.TOKEN;
 
-const TAG_TO_STYLE = {
-  beach: "Beach",
-  boho: "Boho",
-  coquette: "Coquette",
-  linen: "Linen",
-  nature: "Nature",
-  retro: "Retro",
-  tropical: "Tropical",
-  vintage: "Vintage",
-};
+// Tags you want to sync → metafield
+const ALLOWED_TAGS = [
+  "beach",
+  "boho",
+  "coquette",
+  "linen",
+  "nature",
+  "retro",
+  "tropical",
+  "vintage"
+];
 
-const headers = {
-  "Content-Type": "application/json",
-  "X-Shopify-Access-Token": TOKEN,
-};
+// Map lowercase → Capitalized (optional but clean)
+const TAG_MAP = Object.fromEntries(
+  ALLOWED_TAGS.map(t => [t.toLowerCase(), t.charAt(0).toUpperCase() + t.slice(1)])
+);
 
-async function getAllProducts() {
-  let products = [];
-  let url = `https://${SHOP}/admin/api/${API_VERSION}/products.json?limit=250`;
+const endpoint = `https://${SHOP}/admin/api/2024-10/graphql.json`;
 
-  while (url) {
-    const res = await fetch(url, { headers });
-    const data = await res.json();
-    products.push(...data.products);
-
-    const link = res.headers.get("link");
-    if (link && link.includes('rel="next"')) {
-      url = link.match(/<([^>]+)>/)[1];
-    } else {
-      url = null;
-    }
-  }
-  return products;
-}
-
-async function getExistingStyles(productId) {
-  const res = await fetch(
-    `https://${SHOP}/admin/api/${API_VERSION}/products/${productId}/metafields.json?namespace=custom&key=style_new`,
-    { headers }
-  );
-  const data = await res.json();
-
-  if (!data.metafields.length) return [];
-  return JSON.parse(data.metafields[0].value);
-}
-
-async function updateStyles(productId, values) {
-  const body = {
-    metafield: {
-      namespace: "custom",
-      key: "style_new",
-      type: "list.single_line_text_field",
-      value: JSON.stringify(values),
+async function shopify(query, variables = {}) {
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": TOKEN
     },
-  };
-
-  const res = await fetch(
-    `https://${SHOP}/admin/api/${API_VERSION}/products/${productId}/metafields.json`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    }
-  );
-
-  if (!res.ok) {
-    console.error(`❌ Failed product ${productId}`);
-  } else {
-    console.log(`✅ Product ${productId}: ${values.join(", ")}`);
-  }
+    body: JSON.stringify({ query, variables })
+  });
+  return res.json();
 }
 
 async function run() {
-  const products = await getAllProducts();
+  let cursor = null;
+  let hasNextPage = true;
 
-  for (const product of products) {
-    const tags = product.tags
-      .split(",")
-      .map(t => t.trim().toLowerCase());
+  while (hasNextPage) {
+    const query = `
+      query ($cursor: String) {
+        products(first: 100, after: $cursor) {
+          pageInfo { hasNextPage }
+          edges {
+            cursor
+            node {
+              id
+              tags
+              metafield(namespace: "custom", key: "style_new") {
+                value
+              }
+            }
+          }
+        }
+      }
+    `;
 
-    const matched = Object.entries(TAG_TO_STYLE)
-      .filter(([tag]) => tags.includes(tag))
-      .map(([, value]) => value);
+    const res = await shopify(query, { cursor });
+    const edges = res.data.products.edges;
 
-    if (!matched.length) continue;
+    for (const { node } of edges) {
+      // normalize product tags
+      const matched = node.tags
+        .map(t => t.trim().toLowerCase())
+        .filter(t => TAG_MAP[t])
+        .map(t => TAG_MAP[t]);
 
-    const existing = await getExistingStyles(product.id);
-    const finalValues = [...new Set([...existing, ...matched])];
+      if (!matched.length) continue;
 
-    await updateStyles(product.id, finalValues);
+      let existing = [];
+      if (node.metafield?.value) {
+        try {
+          existing = JSON.parse(node.metafield.value);
+        } catch {
+          existing = [];
+        }
+      }
+
+      const merged = [...new Set([...existing, ...matched])];
+
+      // nothing changed → skip
+      if (merged.length === existing.length) continue;
+
+      const mutation = `
+        mutation ($input: MetafieldsSetInput!) {
+          metafieldsSet(metafields: [$input]) {
+            userErrors { message }
+          }
+        }
+      `;
+
+      await shopify(mutation, {
+        input: {
+          ownerId: node.id,
+          namespace: "custom",
+          key: "style_new",
+          type: "list.single_line_text_field",
+          value: JSON.stringify(merged)
+        }
+      });
+
+      console.log(`Updated product ${node.id}:`, merged);
+    }
+
+    hasNextPage = res.data.products.pageInfo.hasNextPage;
+    cursor = edges.at(-1)?.cursor;
   }
+
+  console.log("✅ Style sync completed");
 }
 
-run().catch(console.error);
+run();
