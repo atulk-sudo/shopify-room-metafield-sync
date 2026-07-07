@@ -21,3 +21,9 @@ jobs:
 
       - name: Run script
         run: node scripts/clean-description.js
+
+      - name: Upload cleaned CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: products-clean
+          path: output/products-clean.csv
