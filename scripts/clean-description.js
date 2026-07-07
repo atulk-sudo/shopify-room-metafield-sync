@@ -21,9 +21,14 @@ fs.createReadStream(inputFile)
   .pipe(csv())
   .on("data", (row) => {
     if (row["Body (HTML)"]) {
-      row["Body (HTML)"] = htmlToText(row["Body (HTML)"], {
-        wordwrap: false,
-      }).trim();
+      let description = htmlToText(row["Body (HTML)"], {
+  wordwrap: false,
+}).trim();
+
+// Remove everything from "Repeat:" onward
+description = description.replace(/\n*\s*Repeat:\s*[\s\S]*$/i, "").trim();
+
+row["Body (HTML)"] = description;
     }
 
     rows.push(row);
