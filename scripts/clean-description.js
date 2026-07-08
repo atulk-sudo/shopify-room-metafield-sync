@@ -36,7 +36,7 @@ description = description
 
 // Remove Pattern / Pattern Repeat / Repeat section
 description = description.replace(
-  /\n*\s*(Pattern\s*Repeat|Pattern|Repeat)\s*:?\s*[\s\S]*$/i,
+  /\n+(Pattern\s*Repeat|Pattern|Repeat)\s*:?\s*[\s\S]*$/i,
   ""
 ).trim();
 
