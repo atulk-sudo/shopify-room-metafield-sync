@@ -25,8 +25,20 @@ fs.createReadStream(inputFile)
   wordwrap: false,
 }).trim();
 
-// Remove everything from "Repeat:" onward
-description = description.replace(/\n*\s*Repeat:\s*[\s\S]*$/i, "").trim();
+// Fix common encoding/mojibake characters
+description = description
+  .replace(/‚Äôs/g, "'s")
+  .replace(/‚Äô/g, "'")
+  .replace(/â€™/g, "'")
+  .replace(/â€œ/g, '"')
+  .replace(/â€/g, '"')
+  .replace(/â€“/g, "-");
+
+// Remove Pattern / Pattern Repeat / Repeat section
+description = description.replace(
+  /\n*\s*(Pattern\s*Repeat|Pattern|Repeat)\s*:?\s*[\s\S]*$/i,
+  ""
+).trim();
 
 row["Body (HTML)"] = description;
     }
